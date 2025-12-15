@@ -2,123 +2,179 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Heat Pump 3D Viewer</title>
+  <title>Heat Pump 3D Viewer (STL/OBJ)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #202020;
-    }
-    canvas {
-      display: block;
-    }
+    html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#202020; }
+    canvas { display:block; }
   </style>
 </head>
 <body>
 
-<!-- ⚠️ 반드시 이 버전 유지 (안정 버전) -->
+<!-- ✅ 안정 버전 고정 -->
 <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 
 <script>
-/* =========================================================
-   설정
-========================================================= */
-const STL_URL =
+/* =======================
+   설정: 기본 모델 URL
+   (여기를 OBJ로 바꾸면 OBJ를 기본으로 엽니다)
+======================= */
+// const DEFAULT_MODEL_URL =
   "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.stl";
+// 예: OBJ를 쓰려면 위 줄을 아래로 바꾸세요.
+const DEFAULT_MODEL_URL = "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.obj";
 
-/* =========================================================
+/* =======================
+   URL 파라미터 지원:
+   https://.../index.html?model=... 로 다른 모델도 가능
+======================= */
+function getParam(name) {
+  const url = new URL(window.location.href);
+  return url.searchParams.get(name);
+}
+const modelUrl = getParam("model") || DEFAULT_MODEL_URL;
+
+/* =======================
    Scene / Camera / Renderer
-========================================================= */
+======================= */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x202020);
 
-const camera = new THREE.PerspectiveCamera(
-  45,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  5000
-);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000);
 camera.position.set(200, 200, 200);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-/* =========================================================
-   Lighting (모델이 잘 보이도록 충분히)
-========================================================= */
+/* =======================
+   Lighting
+======================= */
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
 dirLight.position.set(1, 1, 1);
 scene.add(dirLight);
 
-/* =========================================================
+/* =======================
    Controls
-========================================================= */
+======================= */
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
-/* =========================================================
-   STL Load
-========================================================= */
-const loader = new THREE.STLLoader();
+/* =======================
+   유틸: 중심/스케일 맞추기 (Object3D용)
+======================= */
+function centerAndScaleObject(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  obj.position.sub(center);
 
-loader.load(
-  STL_URL,
-  (geometry) => {
-    geometry.computeBoundingBox();
-    geometry.computeVertexNormals();
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const s = 150 / Math.max(size.x, size.y, size.z);
+  obj.scale.multiplyScalar(s);
 
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x00aaff,
-      metalness: 0.1,
-      roughness: 0.6,
-      side: THREE.DoubleSide
-    });
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
 
-    const mesh = new THREE.Mesh(geometry, material);
+let currentObject = null;
+function replaceObject(obj) {
+  if (currentObject) scene.remove(currentObject);
+  currentObject = obj;
+  scene.add(obj);
+}
 
-    // 중심 정렬
-    const box = geometry.boundingBox;
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    mesh.position.sub(center);
+/* =======================
+   로더 선택: STL 또는 OBJ
+======================= */
+function getExt(url) {
+  const clean = url.split('?')[0].split('#')[0];
+  return clean.substring(clean.lastIndexOf('.') + 1).toLowerCase();
+}
 
-    // 자동 스케일
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const scale = 150 / Math.max(size.x, size.y, size.z);
-    mesh.scale.setScalar(scale);
+function loadModel(url) {
+  const ext = getExt(url);
 
-    scene.add(mesh);
+  if (ext === "stl") {
+    const loader = new THREE.STLLoader();
+    loader.load(
+      url,
+      (geometry) => {
+        geometry.computeBoundingBox();
+        geometry.computeVertexNormals();
 
-    // 컨트롤 중심 재설정
-    controls.target.set(0, 0, 0);
-    controls.update();
-  },
-  undefined,
-  (err) => {
-    console.error("STL load error:", err);
+        const material = new THREE.MeshStandardMaterial({
+          color: 0x00aaff,
+          metalness: 0.1,
+          roughness: 0.6,
+          side: THREE.DoubleSide
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+
+        // 중심/스케일
+        const box = geometry.boundingBox;
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        mesh.position.sub(center);
+
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const s = 150 / Math.max(size.x, size.y, size.z);
+        mesh.scale.setScalar(s);
+
+        replaceObject(mesh);
+      },
+      undefined,
+      (err) => console.error("STL load error:", err)
+    );
+  } 
+  else if (ext === "obj") {
+    const loader = new THREE.OBJLoader();
+    loader.load(
+      url,
+      (obj) => {
+        // OBJ에 재질이 없으면 기본 재질을 강제로 입힘(안 보이는 문제 예방)
+        obj.traverse((child) => {
+          if (child.isMesh) {
+            child.material = new THREE.MeshStandardMaterial({
+              color: 0x00aaff,
+              metalness: 0.1,
+              roughness: 0.6,
+              side: THREE.DoubleSide
+            });
+            // 노멀 문제 예방(일부 OBJ에서 효과)
+            if (child.geometry) child.geometry.computeVertexNormals();
+          }
+        });
+
+        centerAndScaleObject(obj);
+        replaceObject(obj);
+      },
+      undefined,
+      (err) => console.error("OBJ load error:", err)
+    );
+  } 
+  else {
+    console.error("지원하지 않는 형식:", ext);
   }
-);
+}
 
-/* =========================================================
+/* =======================
    Resize & Render Loop
-========================================================= */
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+======================= */
+addEventListener("resize", () => {
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
 });
 
 function animate() {
@@ -127,6 +183,9 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+/* 실행 */
+loadModel(modelUrl);
 </script>
 
 </body>
