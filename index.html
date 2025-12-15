@@ -34,9 +34,9 @@ window.addEventListener("error", (e)=> show("❌ JS 오류:\n" + (e.message || e
 window.addEventListener("unhandledrejection", (e)=> show("❌ Promise 오류:\n" + (e.reason?.message || e.reason || e)) );
 
 // ✅ OBJ 기본으로 열기
-const DEFAULT_MODEL_URL = "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.obj";
+// const DEFAULT_MODEL_URL = "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.obj";
 // STL로 바꾸려면 아래처럼:
-// const DEFAULT_MODEL_URL = "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.stl";
+const DEFAULT_MODEL_URL = "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.stl";
 
 function getParam(name) {
   const url = new URL(window.location.href);
