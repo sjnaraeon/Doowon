@@ -1,49 +1,157 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Heat Pump 3D Viewer</title>
+  <title>Heat Pump 3D Viewer (Debug)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #202020;
+    html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#202020; }
+    canvas { display:block; }
+    #hud {
+      position: fixed; left: 10px; top: 10px; right: 10px;
+      background: rgba(0,0,0,0.55); color: #fff; padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px; line-height: 1.4; border-radius: 8px;
+      z-index: 9999; white-space: pre-wrap;
     }
-    canvas { display: block; }
   </style>
 </head>
 <body>
+  <div id="hud">booting…</div>
 
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://unpkg.com/three@0.160.0/examples/js/loaders/STLLoader.js"></script>
+  <!-- ✅ 우선 CDN 로드 -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/STLLoader.js"></script>
 
-<script>
-/* =========================================================
-   기본 설정
-========================================================= */
-const STL_URL =
-  "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.stl";
+  <script>
+    const hud = document.getElementById("hud");
+    const log = (msg) => { hud.textContent += "\n" + msg; };
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x202020);
+    // 전역 에러를 화면에 표시
+    window.addEventListener("error", (e) => log("❌ window.error: " + (e.message || e)));
+    window.addEventListener("unhandledrejection", (e) => log("❌ unhandledrejection: " + (e.reason?.message || e.reason || e)));
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
-camera.position.set(200, 200, 200);
-camera.lookAt(0, 0, 0);
+    log("✅ page loaded");
+    log("THREE 존재? " + (typeof THREE !== "undefined"));
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-document.body.appendChild(renderer.domElement);
+    if (typeof THREE === "undefined") {
+      log("➡️ 결론: three.min.js 로드 실패(네트워크/차단) 입니다.");
+      log("➡️ 해결: three.js 파일을 repo에 올려서 상대경로로 불러오도록 바꾸세요.");
+      throw new Error("THREE not loaded");
+    }
 
-/* =========================================================
-   조명 (이게 없으면 검게 보임)
-========================================================= */
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const STL_URL = "https://raw.githubusercontent.com/sjnaraeon/Doowon/main/sample.stl";
+    log("STL_URL: " + STL_URL);
 
-const dirLight = ne
+    // 씬/카메라/렌더러
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x202020);
+
+    const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000);
+    camera.position.set(200, 200, 200);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    // “렌더 자체”가 되는지 확인용 도구들(이게 안 보이면 STL 이전 문제)
+    scene.add(new THREE.AxesHelper(80));
+    scene.add(new THREE.GridHelper(200, 10));
+
+    // 라이트
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.0);
+    dl.position.set(1, 1, 1);
+    scene.add(dl);
+
+    // 컨트롤
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.update();
+
+    // STL 로드 전, STL URL에 fetch가 가능한지 먼저 확인
+    (async () => {
+      try {
+        log("➡️ fetch(STL) 테스트 시작…");
+        const res = await fetch(STL_URL, { cache: "no-store" });
+        log("fetch 응답: " + res.status + " " + res.statusText);
+        log("content-type: " + (res.headers.get("content-type") || "(none)"));
+        if (!res.ok) throw new Error("fetch failed: " + res.status);
+        log("✅ fetch OK (STL 다운로드 가능)");
+      } catch (e) {
+        log("❌ fetch 실패: " + (e.message || e));
+        log("➡️ 결론: 네트워크/방화벽/차단/SSL 문제로 raw.githubusercontent.com 접근이 안 될 수 있습니다.");
+      }
+
+      try {
+        log("➡️ STLLoader.load 시작…");
+        const loader = new THREE.STLLoader();
+        loader.load(
+          STL_URL,
+          (geometry) => {
+            log("✅ STLLoader.load 성공");
+
+            geometry.computeBoundingBox();
+            geometry.computeVertexNormals();
+
+            const mat = new THREE.MeshStandardMaterial({
+              color: 0x00aaff,
+              metalness: 0.1,
+              roughness: 0.6,
+              side: THREE.DoubleSide
+            });
+
+            const mesh = new THREE.Mesh(geometry, mat);
+
+            // center & scale
+            const box = geometry.boundingBox;
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            mesh.position.sub(center);
+
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const s = 150 / Math.max(size.x, size.y, size.z);
+            mesh.scale.setScalar(s);
+
+            scene.add(mesh);
+            controls.target.set(0, 0, 0);
+            controls.update();
+
+            log("✅ mesh added (모델 표시되어야 정상)");
+          },
+          (xhr) => {
+            if (xhr && xhr.total) {
+              const p = Math.round((xhr.loaded / xhr.total) * 100);
+              log("… STL 로딩중 " + p + "%");
+            }
+          },
+          (err) => {
+            log("❌ STLLoader error: " + (err?.message || err));
+            log("➡️ 결론: STL 로드 단계에서 막혔습니다(차단/404/CORS/SSL 등).");
+          }
+        );
+      } catch (e) {
+        log("❌ STLLoader 호출 자체 실패: " + (e.message || e));
+      }
+    })();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    log("✅ render loop started (축/격자라도 보여야 정상)");
+  </script>
+</body>
+</html>
